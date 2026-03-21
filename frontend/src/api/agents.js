@@ -1,5 +1,15 @@
 import api from './axios'
 
+// Headers that prevent the browser from ever caching a response.
+// Applied to wallet-sensitive endpoints (access check, upvote status)
+// so switching accounts always fetches fresh data from the server.
+const NO_CACHE = {
+  headers: {
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+  },
+}
+
 export const agentsAPI = {
   // ─────────────────────────────────────────────
   // READ
@@ -12,26 +22,25 @@ export const agentsAPI = {
 
   getMetrics: (id) => api.get(`/agents/${id}/metrics`),
 
-  checkAccess: (agentId) => api.get(`/agents/${agentId}/access`),
+  // ── Wallet-sensitive — never cache ──────────────────────────
 
-  checkUpvoteStatus: (agentId) => api.get(`/agents/${agentId}/upvote-status`),
+  checkAccess: (agentId) =>
+    api.get(`/agents/${agentId}/access`, NO_CACHE),
+
+  checkUpvoteStatus: (agentId) =>
+    api.get(`/agents/${agentId}/upvote-status`, NO_CACHE),
 
   // ─────────────────────────────────────────────
   // DEPLOY AGENT FLOW
   // ─────────────────────────────────────────────
 
-  /**
-   * Create agent record.
-   * pricing = monthly price in wei (string)
-   * lifetimeMultiplier = how many months = 1 lifetime (default 12)
-   */
   deploy: (data) =>
     api.post('/agents/deploy', {
       name: data.name,
       description: data.description,
       endpoint: data.endpoint,
       tier: data.tier,
-      pricing: data.pricing,              // monthly price in wei string
+      pricing: data.pricing,
       lifetimeMultiplier: data.lifetimeMultiplier ?? 12,
       tags: data.tags || [],
       category: data.category,
@@ -39,9 +48,6 @@ export const agentsAPI = {
       deployMode: data.deployMode || 'database',
     }),
 
-  /**
-   * After on-chain tx confirmed, tell backend to activate the draft.
-   */
   confirmDeploy: (id, txHash, contractAgentId) =>
     api.post(`/agents/${id}/confirm`, {
       txHash,
@@ -54,11 +60,6 @@ export const agentsAPI = {
   // ACCESS PURCHASE
   // ─────────────────────────────────────────────
 
-  /**
-   * Record a completed purchase.
-   * For blockchain agents: txHash is required (wallet tx done client-side).
-   * For DB agents: no txHash needed.
-   */
   purchaseAccess: (agentId, isLifetime, txHash) =>
     api.post(`/agents/${agentId}/purchase`, {
       isLifetime,
@@ -66,14 +67,9 @@ export const agentsAPI = {
     }),
 
   // ─────────────────────────────────────────────
-  // UPVOTE (paid on blockchain, free on DB)
+  // UPVOTE
   // ─────────────────────────────────────────────
 
-  /**
-   * Upvote an agent.
-   * For blockchain agents: txHash is required (AGT transfer done client-side).
-   * For DB agents: no txHash needed (free, deduplicated by wallet).
-   */
   upvote: (agentId, txHash) =>
     api.post(`/agents/${agentId}/upvote`, { txHash: txHash || undefined }),
 

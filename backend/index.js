@@ -19,7 +19,14 @@ import reviewRoutes from './routes/reviewRoutes.js'
 
 const app = express()
 
-// ── Core middleware ────────────────────────────────────────
+// ── Disable ETags globally ─────────────────────────────────────
+// Without this, Express compares response bodies and sends 304 Not Modified,
+// causing browsers to serve stale cached API responses. This is especially
+// harmful for access/upvote checks where the answer depends on which wallet
+// is currently connected — the browser has no way to know the wallet changed.
+app.set('etag', false)
+
+// ── Core middleware ────────────────────────────────────────────
 app.use(
   helmet({
     contentSecurityPolicy: false,
@@ -48,7 +55,18 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }))
 app.use(morgan(config.isDev ? 'dev' : 'combined'))
 app.use(apiLimiter)
 
-// ── Health check ───────────────────────────────────────────
+// ── No-cache middleware for all /api routes ────────────────────
+// Forces the browser and any proxies to always make a real request
+// instead of serving a cached response. Critical for wallet-dependent
+// endpoints like /access and /upvote-status.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  res.set('Pragma', 'no-cache')
+  res.set('Expires', '0')
+  next()
+})
+
+// ── Health check ───────────────────────────────────────────────
 app.get('/health', async (req, res) => {
   const network = await contractManager.getNetworkInfo?.()
   res.json({
@@ -61,24 +79,24 @@ app.get('/health', async (req, res) => {
   })
 })
 
-// ── API routes ─────────────────────────────────────────────
+// ── API routes ─────────────────────────────────────────────────
 app.use('/api/auth', authRoutes)
 app.use('/api/agents', agentRoutes)
 app.use('/api', executionRoutes)
 app.use('/api', analyticsRoutes)
 app.use('/api', reviewRoutes)
 
-// ── 404 handler ────────────────────────────────────────────
+// ── 404 handler ────────────────────────────────────────────────
 app.use('*', (req, res) => {
   res.status(404).json({
     error: `Route ${req.method} ${req.originalUrl} not found`,
   })
 })
 
-// ── Error handler ──────────────────────────────────────────
+// ── Error handler ──────────────────────────────────────────────
 app.use(errorHandler)
 
-// ── Start server ───────────────────────────────────────────
+// ── Start server ───────────────────────────────────────────────
 const start = async () => {
   try {
     await contractManager.init()
